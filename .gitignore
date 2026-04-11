@@ -1,0 +1,29 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# LaTeX intermediates
+*.aux
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+texput.log
+
+# Notebook and editor
+.ipynb_checkpoints/
+.vscode/
+.idea/
+
+# Data artifacts often regenerated locally
+*.tmp
+*.bak
+

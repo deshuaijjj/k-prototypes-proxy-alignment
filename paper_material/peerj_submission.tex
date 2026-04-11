@@ -1,0 +1,420 @@
+\documentclass[10pt,lineno]{wlpeerj}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{bm}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage{ragged2e}
+
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+
+\setlength{\tabcolsep}{2.5pt}
+\allowdisplaybreaks[2]
+\setlength{\textfloatsep}{7pt plus 2pt minus 2pt}
+\setlength{\floatsep}{6pt plus 2pt minus 2pt}
+\setlength{\intextsep}{6pt plus 2pt minus 2pt}
+\captionsetup{font=small,skip=3pt}
+\setlist{nosep}
+\AtBeginEnvironment{tabular}{\footnotesize}
+\AtBeginEnvironment{tabular*}{\footnotesize}
+
+\title{On the Reliability of Gamma Search in K-Prototypes Clustering: A Proxy-Alignment Diagnostic and Reproducible Benchmark}
+
+\author[1]{Yuxin Zhang}
+\author[1]{Man Yuan}
+\affil[1]{Affiliation to be finalized for submission}
+\keywords{K-Prototypes clustering, mixed-type data, hyperparameter search, log-space parameterization, proxy alignment, reproducibility}
+
+\date{}
+
+\begin{abstract}
+Hyperparameter search in unsupervised clustering is typically driven by internal objectives whose relationship to external clustering quality is rarely verified. This paper studies that reliability problem in the specific setting of $K$-Prototypes clustering, where the balancing parameter $\gamma$ strongly affects the trade-off between numerical and categorical features and may operate over multiple orders of magnitude. Rather than claiming a universally superior optimizer, we examine when search based on the internal $K$-Prototypes objective helps, when it misleads, and how search-space parameterization and evaluation budget affect that outcome. We introduce a lightweight proxy-alignment diagnostic based on the Spearman correlation between the internal objective $J(\gamma)$ and external clustering quality measured by adjusted Rand index, intended for validation-in-the-loop or audit settings in which a small labeled reference subset is available alongside a larger unlabeled dataset. We then compare linear-space, logarithmic-space, and adaptive search strategies under fixed evaluation budgets on seven synthetic datasets and four primary real datasets, with extended proxy-alignment scans on ten real datasets. Across the synthetic benchmark, logarithmic-space search is consistently more reliable than linear-space search when the effective $\gamma$ region spans multiple orders of magnitude. On real datasets, search behavior is conditional on proxy alignment: when the internal objective is misaligned with external quality, search can systematically underperform the default heuristic. We also find that the additional value of adaptive refinement is budget-dependent: under sparse budgets it can provide moderate gains, whereas at $B=15$ it is statistically indistinguishable from a static logarithmic grid. The paper therefore reports a reproducible benchmarking and diagnostic study of reliability in $\gamma$ search for $K$-Prototypes clustering, together with a low-cost diagnostic and a controlled benchmark that can be directly checked and extended in future work.
+\end{abstract}
+
+\begin{document}
+
+\flushbottom
+\maketitle
+\thispagestyle{empty}
+
+\section*{Introduction}
+
+Unsupervised hyperparameter search is usually driven by internal objectives that are convenient to optimize but not necessarily validated against the external quality criteria that practitioners ultimately care about. In clustering, this mismatch is especially important because the internal objective may reward compact partitions that do not correspond to meaningful class or group structure. As a result, the question is not only how to search efficiently, but also whether the quantity being optimized is reliable enough to guide the search at all.
+
+This reliability issue is particularly visible in $K$-Prototypes clustering for mixed-type data. $K$-Prototypes extends $K$-Means by combining squared Euclidean dissimilarity for numerical features with mismatch-based dissimilarity for categorical features, controlled by a balancing parameter $\gamma$. In practice, clustering outcomes can change substantially with $\gamma$, and useful values may span several orders of magnitude. Search methods therefore face two distinct difficulties: the search space is strongly scale-dependent, and the internal objective optimized during search may not track external clustering quality in a trustworthy direction.
+
+This paper studies that problem as a methodological and reproducible benchmark rather than as an attempt to introduce a universally superior optimizer. The scope is intentionally narrower than fully label-free unsupervised deployment: the proposed diagnostic is meant for validation-in-the-loop or audit-oriented workflows in which a small labeled reference subset is available, while clustering remains the operational goal for a much larger unlabeled mixed-type dataset. Within that scope, the study asks three questions: when the internal $K$-Prototypes objective is directionally aligned with external clustering quality, whether logarithmic-space parameterization is more reliable than linear-space search over wide $\gamma$ ranges, and when adaptive refinement provides value beyond simpler logarithmic-space baselines under fixed evaluation budgets. To address these questions, we introduce a lightweight proxy-alignment diagnostic, compare default, linear-space, logarithmic-space, and adaptive strategies under controlled budgets, and report both positive and negative findings as part of a fully reproducible study.
+
+The results reported below concern four aspects of the problem: proxy alignment as a condition for beneficial search, a lightweight 10-probe diagnostic for assessing directional consistency between $J(\gamma)$ and external clustering quality, the role of logarithmic-space parameterization when the effective $\gamma$ region spans multiple orders of magnitude, and the budget-dependent utility of adaptive refinement under the studied settings.
+
+The remainder of the paper first reviews related work, then presents the problem formulation, diagnostic procedure, search methods, theoretical motivation, and experimental protocol, followed by the benchmark results, a discussion of their implications and limitations, and the concluding remarks. Reproducibility and availability information is provided at the end of the manuscript.
+
+\section*{Related Work}
+
+\subsection*{Mixed-data clustering and $K$-Prototypes}
+
+Clustering mixed-type data remains an important problem because many real datasets combine continuous and categorical variables. Among the available partitional methods, $K$-Prototypes~\citep{huang1997,huang1998} remains one of the most widely used due to its conceptual simplicity and computational practicality. The method extends the prototype-based logic of $K$-Means by combining numerical and categorical dissimilarities through a balancing parameter $\gamma$, making it a natural baseline for mixed-type clustering.
+
+Existing work on $K$-Prototypes has mostly focused on initialization, feature weighting, or similarity design. By contrast, this paper treats the clustering algorithm itself as fixed and studies a different question: whether optimizing its internal objective is a reliable way to choose $\gamma$. This shift in focus is important because a well-designed search strategy is not sufficient if the internal objective is directionally misaligned with the external quality criterion.
+
+\subsection*{Hyperparameter search under limited budgets}
+
+Grid search, random search, and model-based optimization are widely used in hyperparameter optimization~\citep{bergstra2012,snoek2012,akiba2019optuna,bischl2023hpo}. In clustering, however, these methods must operate without access to labels during search, so optimization is necessarily driven by internal criteria. This creates a reliability question that is less central in standard supervised hyperparameter tuning: even when search is computationally efficient, it may optimize the wrong quantity.
+
+For $K$-Prototypes in particular, the choice of search-space parameterization is also nontrivial. When meaningful $\gamma$ values span several orders of magnitude, a linear-space grid can devote most of its coverage to numerically large but practically uninformative regions. This makes $\gamma$ search a natural setting for comparing parameterization choices under fixed evaluation budgets.
+
+\subsection*{Adaptive refinement strategies}
+
+Adaptive refinement is widely used in numerical analysis and optimization to concentrate evaluations in promising regions. The present work draws inspiration from D\"orfler-style cumulative-fraction marking~\citep{dorfler1996,pfeiler2020dorfler}, but does not claim to transfer the full theoretical guarantees of adaptive finite element methods to the clustering setting. Instead, we use this idea as a structured way to study whether budget-aware concentration provides measurable value beyond simpler logarithmic-space baselines.
+
+\section*{Materials and Methods}
+
+\subsection*{Problem formulation}
+
+Consider a mixed-type dataset
+\[
+X = \{x_1,\dots,x_n\},
+\]
+where each observation contains both numerical and categorical features. In $K$-Prototypes clustering with $k$ clusters, the dissimilarity between a sample $x_i$ and a prototype $q_j$ is defined as
+\[
+d(x_i,q_j) = \sum_{\ell \in \mathcal{N}} (x_{i\ell} - q_{j\ell})^2 + \gamma \sum_{\ell \in \mathcal{C}} \delta(x_{i\ell}, q_{j\ell}),
+\]
+where $\mathcal{N}$ and $\mathcal{C}$ denote the numerical and categorical feature indices, $\delta(\cdot,\cdot)$ is the mismatch indicator, and $\gamma > 0$ balances the two parts.
+
+The internal clustering objective is
+\[
+J(\gamma) = \sum_{i=1}^{n} \sum_{j=1}^{k} u_{ij} \, d(x_i,q_j),
+\]
+where $u_{ij}$ indicates cluster assignment. During search, all methods considered in this paper optimize the internal objective $J(\gamma)$. For external evaluation, we use adjusted Rand index (ARI), denoted here by $Q(\gamma)$ when a generic external quality notation is useful.
+
+\subsection*{Proxy alignment and diagnostic setting}
+
+We define proxy alignment as the directional consistency between changes in the internal objective $J(\gamma)$ and changes in external clustering quality. In this study, alignment is operationalized through the sign of the Spearman correlation between $J(\gamma)$ and ARI$(\gamma)$ over probe values of $\gamma$. If the correlation is negative, lower values of the internal objective tend to correspond to better external quality, and search is directionally aligned. If the correlation is positive, minimizing the internal objective tends to move away from high-ARI regions, and search is directionally misaligned.
+
+This diagnostic is not intended for fully label-free deployment. Rather, we study validation-in-the-loop model selection or post-hoc audit settings in which a small labeled reference subset is available alongside a much larger unlabeled mixed-type dataset. Such settings are common in applied domains such as healthcare, finance, and enterprise data management, where experts can often label a limited validation sample even when full supervision is infeasible. In that regime, the labels do not replace clustering with a supervised classifier; instead, they are used to audit whether the internal $K$-Prototypes objective is directionally trustworthy for tuning $\gamma$ before the chosen setting is applied to the broader unlabeled data.
+
+To assess this property before running a full search, we use a lightweight 10-probe diagnostic. Specifically, we evaluate $K$-Prototypes at $M=10$ logarithmically spaced values of $\gamma \in [10^{-3},10^3]$, with $r=3$ independent repeats per point. We then compute
+\[
+\hat{\rho} = \rho\bigl(J(\gamma), \mathrm{ARI}(\gamma)\bigr)
+\]
+across the probe points. Because the diagnostic relies on retrospective label-based evaluation, it should be interpreted as a semi-supervised validation tool rather than as a universal component of unsupervised clustering pipelines.
+
+The practical interpretation is intentionally simple. If $\hat{\rho} > 0$, the proxy is treated as misaligned and search is considered risky because minimizing $J(\gamma)$ tends to move away from high-ARI regions. If $\hat{\rho} < 0$, the proxy is treated as aligned and log-space search is considered justified. This diagnostic is not proposed as a universal criterion for all clustering tasks; it is a low-cost empirical check tailored to the present $K$-Prototypes setting.
+
+\subsection*{Search methods}
+
+We compare six methods under a shared search-budget framework:
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Default-KP}: the default heuristic $\gamma = 0.5 \cdot \overline{\sigma}_{\mathrm{num}}$ without search;
+    \item \textbf{Grid-Log}: logarithmic-space grid search;
+    \item \textbf{Random}: logarithmic-space random search;
+    \item \textbf{Optuna-TPE}: model-based search with a log-uniform prior;
+    \item \textbf{DMKPO-Lin}: the linear-space variant of the adaptive search procedure;
+    \item \textbf{DMKPO-Log}: the logarithmic-space adaptive search method studied in this paper.
+\end{itemize}
+
+All search-based methods optimize the same internal $K$-Prototypes objective and are compared under matched evaluation budgets. This shared-budget design is important because the paper is concerned with reliability under constrained search rather than unconstrained asymptotic performance.
+
+\subsection*{DMKPO-Log algorithm}
+
+DMKPO-Log is included as a budget-sensitive adaptive variant rather than as a method assumed to dominate all alternatives. It combines logarithmic-space candidate generation, D\"orfler-style cumulative-fraction marking, and adaptive local refinement under a hard evaluation budget.
+
+\paragraph{Logarithmic-space candidate generation.}
+Because useful $\gamma$ values may span multiple orders of magnitude, candidate generation is performed in $\log_{10}\gamma$ space rather than in linear space. Given a search interval $[\gamma_{\min},\gamma_{\max}]$, the initial candidates are defined by
+\[
+\log_{10}\gamma_i = \log_{10}\gamma_{\min} + \frac{i-1}{m_0-1}\left(\log_{10}\gamma_{\max} - \log_{10}\gamma_{\min}\right),
+\quad i=1,\dots,m_0,
+\]
+and mapped back by $\gamma_i = 10^{\log_{10}\gamma_i}$. Local refinement is also performed in log-space so that neighborhoods remain scale-consistent across small and large values of $\gamma$.
+
+\paragraph{Gradient-aware D\"orfler-style marking.}
+Let
+\[
+\gamma_1 < \gamma_2 < \cdots < \gamma_m
+\]
+be the currently evaluated candidates sorted in increasing order, and let $J(\gamma_i)$ denote the corresponding internal objective values. Local sensitivity is estimated by finite differences in logarithmic space:
+\[
+g_i =
+\begin{cases}
+\dfrac{|J(\gamma_{2})-J(\gamma_{1})|}{|\log_{10}\gamma_{2}-\log_{10}\gamma_{1}|+\varepsilon}, & i=1,\\[8pt]
+\dfrac{|J(\gamma_{m})-J(\gamma_{m-1})|}{|\log_{10}\gamma_{m}-\log_{10}\gamma_{m-1}|+\varepsilon}, & i=m,\\[8pt]
+\dfrac{|J(\gamma_{i+1})-J(\gamma_{i-1})|}{|\log_{10}\gamma_{i+1}-\log_{10}\gamma_{i-1}|+\varepsilon}, & 1<i<m.
+\end{cases}
+\]
+We then normalize objective values and gradients:
+\[
+\tilde{J}_i = \frac{J(\gamma_i)-J_{\min}}{J_{\max}-J_{\min}+\varepsilon},
+\qquad
+\tilde{g}_i = \frac{g_i-g_{\min}}{g_{\max}-g_{\min}+\varepsilon}.
+\]
+The final score is
+\[
+s_i = (1-\alpha)(1-\tilde{J}_i) + \alpha \tilde{g}_i,
+\qquad 0 \le \alpha \le 1.
+\]
+The marked set $\mathcal{M}_t$ is chosen as the smallest subset satisfying
+\[
+\sum_{\gamma_i \in \mathcal{M}_t} s_i \ge \theta \sum_{i=1}^{m} s_i,
+\qquad 0 < \theta < 1.
+\]
+In the present study, the gradient term is interpreted mainly as an exploratory component that may be useful when coverage is sparse. Under denser budgets, its marginal contribution is expected to diminish.
+
+\paragraph{Adaptive refinement density and hard budget ceiling.}
+The number of local samples allocated to marked candidates is allowed to vary with the coefficient of variation of the currently observed objective values:
+\[
+\resizebox{0.92\columnwidth}{!}{$
+\begin{aligned}
+K_t = \Pi_{[K_{\min},K_{\max}]}
+\left(
+\left\lfloor
+K_{\mathrm{base}}
+\left(1+\frac{t}{T_{\max}}\right)
+\frac{1+\mathrm{CV}(J_t)}{2}
++ 0.5
+\right\rfloor
+\right)
+\end{aligned}$}
+\]
+where
+\[
+\mathrm{CV}(J_t)=\frac{\sigma(J_t)}{\mu(J_t)+\varepsilon}.
+\]
+This design is intended as a budget-allocation rule rather than as a claim that adaptive density is universally superior. To ensure fair comparison with the other methods, the total number of $K$-Prototypes evaluations is clipped to a hard budget ceiling $B$ throughout the search.
+
+\subsection*{Theoretical results}
+
+Three theoretical ingredients motivate the benchmark.
+
+\paragraph{Monotonicity of the internal objective.}
+Under a fixed cluster assignment and prototype configuration, the $K$-Prototypes objective is monotonically non-decreasing in $\gamma$ because the categorical mismatch term is non-negative. This explains the structural pressure toward low-$\gamma$ regions when $J(\gamma)$ is optimized directly. In the present paper, this result is used to motivate the proxy-misalignment problem rather than to claim that the algorithm-returned objective is globally monotone under all reassignment dynamics.
+
+\paragraph{Coverage advantage of logarithmic-space parameterization.}
+When the effective search region spans multiple orders of magnitude, logarithmic-space parameterization provides more uniform coverage than linear-space parameterization under a fixed number of evaluations. This result supplies the main theoretical motivation for treating log-space search as the more reliable default in the present benchmark.
+
+\paragraph{Conditional motivation for adaptive refinement.}
+Under suitable regularity assumptions, adaptive refinement in log-space can be interpreted as a localized search procedure with shrinking neighborhoods. In this paper, however, the corresponding regret-style result is treated only as conditional theoretical motivation. The main empirical conclusions remain grounded in the finite-budget benchmark rather than in asymptotic guarantees.
+
+\subsection*{Datasets and experimental protocol}
+
+The empirical study consists of four components: a seven-dataset synthetic benchmark, a four-dataset primary real-data benchmark, extended proxy-alignment scans on ten real datasets, and a lower-budget comparison for budget sensitivity.
+
+\paragraph{Synthetic benchmark.}
+The main benchmark uses seven synthetic mixed-type datasets designed to test interpretable hypotheses under controlled conditions. Three datasets correspond to an H1 setting in which the default heuristic is expected to be miscalibrated because numerical dispersion is large relative to categorical separation. Three datasets correspond to an H2 setting in which too few numerical features make the default heuristic assign an overly small $\gamma$, weakening the effect of categorical information. One additional dataset serves as a balanced control.
+
+\paragraph{Real-data benchmark.}
+We additionally evaluate on four primary real mixed-type datasets: Heart Disease, Credit Approval, Adult, and Bank Marketing. ARI is computed against available class labels as an external reference and is never used during search. Extended proxy-alignment scans are further reported on ten real datasets as part of the diagnostic evaluation.
+
+\paragraph{Methods compared and budget control.}
+Five methods---Grid-Log, Random, Optuna-TPE, DMKPO-Lin, and DMKPO-Log---are compared under a shared budget of 15 $K$-Prototypes evaluations per run. Default-KP is reported as a no-search baseline. Supplementary budget experiments consider $B \in \{7,10,15\}$ to test whether adaptive gains emerge under sparser coverage.
+
+\paragraph{Repeated runs and evaluation protocol.}
+Each stochastic method is repeated 30 times with controlled random seeds. For $K$-Prototypes, we fix common implementation settings across methods to keep the per-evaluation cost comparable under the shared budget. The primary evaluation metric is ARI, computed retrospectively after the search procedure has selected a $\gamma$ value. Search itself always optimizes the internal objective.
+
+\paragraph{Statistical analysis.}
+Statistical comparisons are reported with hypothesis tests and effect sizes. The interpretation in the main text emphasizes effect direction, magnitude, and reproducibility rather than relying on isolated borderline $p$-values. Where deterministic methods induce a high proportion of tied outcomes, exact sign-based comparisons are preferred over tests that become unstable under zero-variance differences.
+
+\subsection*{Reproducibility details}
+
+To support reproducibility, all experiments use an explicitly reported search range $\gamma \in [10^{-3},10^3]$, fixed evaluation budgets, controlled seeds, repeated runs, fixed $K$-Prototypes settings, and fully reported summary statistics. The final submitted version of this manuscript will additionally provide public code, configuration files, preprocessing scripts, result artifacts, and figure/table reproduction commands. The purpose of the present manuscript is therefore not only to report results, but also to provide a benchmark that can be directly re-run and audited by other researchers.
+
+\section*{Results}
+
+\subsection*{Synthetic benchmark}
+
+The synthetic benchmark is designed to test two linked questions: whether systematic search improves over the default heuristic when that heuristic is miscalibrated, and whether search-space parameterization matters more than adaptive refinement under the present budget. The benchmark contains seven controlled mixed-type datasets: three H1 settings, three H2 settings, and one balanced control dataset.
+
+Across these seven datasets, the clearest pattern is the separation between linear-space and logarithmic-space search. DMKPO-Lin performs poorly whenever the effective $\gamma$ region spans a wide portion of the search interval, indicating that linear-space coverage is poorly matched to this problem. On the wide-range H2-Easy dataset, for example, both DMKPO-Lin and Optuna-TPE collapse to the same low-$\gamma$ attractor (mean ARI $= 0.108 \pm 0.001$), whereas all logarithmic-space baselines achieve ARI values of at least $0.735$. By contrast, the strongest logarithmic-space methods remain tightly grouped across the benchmark, which points to parameterization as the first methodological requirement in $\gamma$ search for $K$-Prototypes.
+
+\begin{table}[t]
+\centering
+\caption{Synthetic benchmark: mean ARI $\pm$ standard deviation over 30 runs. Search methods use 15 evaluations per run; Def.-KP is the no-search baseline. Best result per row is in bold; $\ddag$ marks the shared low-$\gamma$ attractor on H2-Easy.}
+\label{tab:main_results}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccccc}
+\toprule
+Dataset & Hyp. & Def.-KP & Grid & Rand. & TPE & DM-Lin & DM-Log \\
+\midrule
+H1-Easy   & H1 & $0.845_{\pm.138}$ & $\mathbf{0.917_{\pm.005}}$ & $0.914_{\pm.010}$ & $0.843_{\pm.003}$ & $0.800_{\pm.124}$ & $\mathbf{0.917_{\pm.005}}$ \\
+H1-Medium & H1 & $0.900_{\pm.178}$ & $\mathbf{0.974_{\pm.002}}$ & $0.973_{\pm.003}$ & $0.966_{\pm.000}$ & $0.896_{\pm.177}$ & $\mathbf{0.974_{\pm.002}}$ \\
+H1-Hard   & H1 & $0.922_{\pm.186}$ & $\mathbf{0.995_{\pm.000}}$ & $0.995_{\pm.001}$ & $\mathbf{0.995_{\pm.000}}$ & $0.922_{\pm.186}$ & $\mathbf{0.995_{\pm.000}}$ \\
+\midrule
+H2-Easy   & H2 & $0.361_{\pm.058}$ & $0.735_{\pm.000}$ & $\mathbf{0.737_{\pm.004}}$ & $0.108_{\pm.001}^{\ddag}$ & $0.108_{\pm.001}^{\ddag}$ & $0.735_{\pm.000}$ \\
+H2-Medium & H2 & $0.855_{\pm.078}$ & $\mathbf{0.930_{\pm.008}}$ & $0.913_{\pm.026}$ & $0.748_{\pm.002}$ & $0.727_{\pm.078}$ & $\mathbf{0.930_{\pm.008}}$ \\
+H2-Hard   & H2 & $0.925_{\pm.090}$ & $\mathbf{0.965_{\pm.013}}$ & $0.948_{\pm.020}$ & $0.848_{\pm.000}$ & $0.821_{\pm.101}$ & $\mathbf{0.965_{\pm.013}}$ \\
+\midrule
+Control   & Ctrl & $0.997_{\pm.000}$ & $\mathbf{1.000_{\pm.000}}$ & $\mathbf{1.000_{\pm.000}}$ & $0.997_{\pm.000}$ & $0.997_{\pm.000}$ & $\mathbf{1.000_{\pm.000}}$ \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+A second result is that DMKPO-Log and Grid-Log are statistically indistinguishable on the main synthetic benchmark at $B=15$. This is reported here as evidence that under sufficiently dense logarithmic coverage, additional adaptivity may have limited marginal value. In other words, the benchmark identifies a regime in which simple log-space coverage is already strong enough that more complex refinement does not provide a measurable gain.
+
+The synthetic benchmark also shows that any adaptive advantage is conditional rather than universal. DMKPO-Log outperforms Random only on a subset of the H2 cases, indicating that adaptive concentration can help in higher-sensitivity settings but does not uniformly dominate other logarithmic-space baselines. The synthetic results therefore support a simple ordering: logarithmic-space parameterization matters first, and adaptive refinement becomes relevant only after that requirement has been met.
+
+\subsection*{Real-data benchmark}
+
+The real-data benchmark provides conditional evidence rather than a uniform gain from search. On proxy-aligned datasets, search-based methods can improve on the default heuristic. On proxy-misaligned datasets, however, search can systematically underperform the default choice. This pattern shows that search quality cannot be separated from proxy reliability: a method may be computationally reasonable and still be harmful if the optimized internal objective is misaligned with the external target.
+
+\begin{table}[t]
+\centering
+\caption{Real-data evaluation: mean ARI $\pm$ standard deviation over 30 runs. Search methods use 15 evaluations per run; Def.-KP is the no-search baseline. Datasets are grouped by proxy alignment.}
+\label{tab:real_results}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccccc}
+\toprule
+Dataset & Proxy & Def.-KP & Grid & Rand. & TPE & DM-Lin & DM-Log \\
+\midrule
+\multicolumn{8}{l}{\textit{Misaligned}} \\
+Heart Disease & Mis. &
+$\mathbf{0.276_{\pm.006}}$ &
+$0.234_{\pm.004}$ &
+$0.235_{\pm.006}$ &
+$0.235_{\pm.004}$ &
+$0.234_{\pm.007}$ &
+$0.234_{\pm.003}$ \\
+Credit Approval & Mis. &
+$\mathbf{0.126_{\pm.012}}$ &
+$0.078_{\pm.000}$ &
+$0.078_{\pm.001}$ &
+$0.077_{\pm.002}$ &
+$0.077_{\pm.002}$ &
+$0.076_{\pm.002}$ \\
+\midrule
+\multicolumn{8}{l}{\textit{Aligned}} \\
+Adult & Aln. &
+$0.077_{\pm.044}$ &
+$0.064_{\pm.013}$ &
+$0.070_{\pm.009}$ &
+$0.071_{\pm.010}$ &
+$0.071_{\pm.009}$ &
+$\mathbf{0.073_{\pm.004}}$ \\
+Bank Marketing & Aln. &
+$0.057_{\pm.053}$ &
+$\mathbf{0.101_{\pm.000}}$ &
+$0.101_{\pm.001}$ &
+$0.099_{\pm.005}$ &
+$0.078_{\pm.037}$ &
+$0.090_{\pm.032}$ \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+The two misaligned datasets in the primary benchmark, Heart Disease and Credit Approval, are especially informative. On both datasets, all search methods underperform Default-KP, with the strongest observed degradation reaching Cliff's $\delta=-1.00$ against Default-KP in the pairwise comparisons. These cases therefore act as direct counterexamples to the assumption that more extensive search must improve clustering performance.
+
+The aligned datasets, Adult and Bank Marketing, show a different pattern. Search is directionally safer there, but the practical strength of the gains is still dataset-dependent. In particular, Adult remains a low-ARI dataset for all methods, showing that proxy alignment alone does not guarantee strong recoverability of the external class structure. This distinction between directional alignment and absolute cluster recoverability is important for interpreting the scope of the present results.
+
+\subsection*{Proxy-alignment diagnostic results}
+
+The 10-probe diagnostic is intended as a lightweight pre-search check rather than as a replacement for full landscape analysis. On the four primary real datasets, the sign of the diagnostic correlation matches the observed alignment status in the benchmark. This suggests that a small number of logarithmically spaced probe evaluations can already provide useful information about whether minimizing $J(\gamma)$ is likely to move the search toward or away from higher-ARI regions.
+
+The extended landscape scans on ten real datasets provide a richer empirical picture of this behavior. In particular, they show that misalignment is associated with a substantial separation between the $J$-minimizing region and the ARI-maximizing region, whereas aligned datasets exhibit much smaller gaps. In the present paper, these extended scans are used mainly to support the interpretation of the primary benchmark and to show that the diagnostic is not an artifact of only four datasets.
+
+The practical role of the diagnostic is deliberately narrow. It is not proposed as a general solution to unsupervised model selection, and it is not intended for settings in which no reference labels are available at all. Rather, it is a lightweight validation tool for semi-supervised or audit-oriented workflows, where a small labeled subset can be used to assess whether the internal objective appears directionally trustworthy before the full search budget is spent on the larger unlabeled corpus.
+
+\subsection*{Statistical summary}
+
+To complement the mean ARI tables above, we report pairwise significance tests comparing DMKPO-Log against key baselines on both the synthetic and real-data benchmarks.
+
+\begin{table}[t]
+\centering
+\caption{Synthetic benchmark: DMKPO-Log versus baselines. Cells report $p$-value and Cliff's $\delta$; $\delta=0.00$ in vs.~Grid means identical ARI distributions. *** $p<0.001$, ** $p<0.01$, * $p<0.05$, ns = not significant.}
+\label{tab:stat_tests}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+Dataset & vs.~Def. & vs.~Grid & vs.~Rand. & vs.~DM-Lin \\
+\midrule
+H1-Easy   & ${<}.001,\ 1.00$*** & ns, $0.00$ & ns & ${<}.001,\ 1.00$*** \\
+H1-Medium & ${<}.001,\ 0.86$*** & ns, $0.00$ & ns & ${<}.001,\ 1.00$*** \\
+H1-Hard   & $.023,\ 0.13$*      & ns, $0.00$ & ns & $.023,\ 0.13$* \\
+\midrule
+H2-Easy   & ${<}.001,\ 1.00$*** & ns & ns & ${<}.001,\ 1.00$*** \\
+H2-Medium & ${<}.001,\ 1.00$*** & ns & $.003,\ 0.20$** & ${<}.001,\ 1.00$*** \\
+H2-Hard   & ${<}.001,\ 0.74$*** & ns, $0.00$ & ${<}.001,\ 0.64$*** & ${<}.001,\ 1.00$*** \\
+\midrule
+Control   & $.001,\ 1.00$**     & ns & ns & $.001,\ 1.00$** \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Real-data DMKPO-Log versus baselines. Cells report $p$-value and Cliff's $\delta$; $\dagger$ marks sign-test comparisons against deterministic Grid. *** $p<0.001$, ** $p<0.01$, * $p<0.05$, ns = not significant.}
+\label{tab:real_stat_tests}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+Dataset & vs.~Def. & vs.~Grid & vs.~Rand. & vs.~DM-Lin \\
+\midrule
+Heart Disease & $1.000,\ -1.00$ & ns$^\dagger$ & ns, $0.813,\ -0.17$ & ns, $0.839,\ -0.04$ \\
+Credit Approval & $1.000,\ -1.00$ & ns$^\dagger$ & ns, $0.961,\ -0.32$ & ns, $0.658,\ -0.09$ \\
+Adult & ns, $0.216,\ 0.60$ & $.014,\ 0.31$* & ns, $0.221,\ 0.29$ & ns, $0.339,\ 0.11$ \\
+Bank Marketing & $.019,\ 0.76$* & ns$^\dagger$ & ns, $0.793,\ -0.11$ & ns, $0.200,\ 0.21$ \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+The statistical summary clarifies the interpretation of the point estimates. On synthetic data, DMKPO-Log consistently outperforms Default-KP and DMKPO-Lin across all H1/H2 datasets while remaining statistically indistinguishable from Grid-Log under the main budget. On real data, the evidence is mixed: DMKPO-Log improves over Grid-Log only on Adult and over Default-KP only on Bank Marketing, whereas on Heart Disease and Credit Approval every search-based comparison remains directionally unfavorable relative to the default heuristic. These tests are consistent with the broader pattern reported above: proxy reliability and search-space parameterization vary more systematically across datasets than the added value of adaptive refinement.
+
+\subsection*{Budget sensitivity}
+
+The comparison between DMKPO-Log and Grid-Log is budget-dependent. Under sparse budgets, adaptive concentration can recover part of the coverage lost by a coarse logarithmic grid. Under the main budget of $B=15$, however, the two methods are statistically indistinguishable in the synthetic benchmark. This identifies a practically relevant regime in which a simpler logarithmic grid is already sufficient.
+
+The lower-budget comparison clarifies this pattern. At $B=7$, DMKPO-Log shows moderate gains on selected H2 datasets, including a significant improvement on H2-Medium ($p<0.05$, Cliff's $\delta=0.139$). At $B=10$, this advantage is reduced. At $B=15$, it disappears in the synthetic benchmark. This pattern suggests a simple resource-aware rule: adaptive refinement is most relevant when logarithmic-space coverage is still too sparse to sample transition regions adequately.
+
+This budget dependence matters for practice. It shows that the value of added search complexity is conditional on the evaluation regime. When only a small number of $K$-Prototypes calls is available, adaptive concentration can be worthwhile. When the budget is large enough to support sufficiently dense logarithmic coverage, a static log-grid may already be a transparent and practically sufficient baseline.
+
+\section*{Discussion}
+
+The present study supports three bounded findings about $\gamma$ search in $K$-Prototypes clustering. First, proxy alignment is a precondition for beneficial search: when minimizing the internal objective moves the search away from higher-ARI regions, search can systematically underperform the default heuristic, as seen on Heart Disease and Credit Approval. Second, when search is justified, logarithmic-space parameterization matters more than optimizer sophistication: the synthetic benchmark consistently separates log-space methods from linear-space search, especially on wide-range H2 settings. Third, the value of adaptive refinement is budget-dependent rather than universal: at $B=15$, DMKPO-Log is indistinguishable from Grid-Log on the synthetic benchmark, whereas under sparser budgets it can recover moderate gains.
+
+These patterns are consistent with a layered interpretation of the problem. Proxy reliability determines whether search is advisable at all, logarithmic-space parameterization determines whether the relevant region is covered appropriately, and adaptive refinement becomes most relevant only when the budget is too sparse for static log-space coverage to resolve transition regions adequately.
+
+The real-data benchmark reinforces why a diagnostic-first perspective is needed. On proxy-misaligned datasets, the problem is not merely inefficient search but unreliable optimization direction: minimizing $J(\gamma)$ can actively degrade external clustering quality. On aligned datasets, search is directionally safer, but alignment alone does not ensure strong recovery of class structure, as Adult shows. Proxy alignment should therefore be interpreted as a condition for safer search, not as a guarantee of high ARI.
+
+The same restrained reading applies to model-based search. Under the present micro-budget setting, Optuna-TPE does not avoid the low-$\gamma$ failure mode on wide-range H2 data, which suggests that poor parameterization and limited coverage can dominate optimizer choice.
+
+Within this scope, the practical message is deliberately conservative. When validation labels are available, it is useful to diagnose proxy alignment before spending the full search budget. If the proxy appears misaligned, Default-KP is the safer baseline. If it appears aligned, search should be performed in log-space; under moderate budgets, a static log-grid can be sufficient, whereas under tighter budgets DMKPO-Log becomes more attractive. The main limitations remain that the real-data benchmark is small, the diagnostic currently depends on labels, and the theoretical arguments are used as motivation rather than finite-sample guarantees. Future work should expand the real-data benchmark, explore label-free proxies for alignment, and extend the reliability perspective to higher-dimensional search problems.
+
+\section*{Conclusions}
+
+This paper reports a reproducible, diagnostic-first study of reliability in $\gamma$ search for $K$-Prototypes clustering. It is best read as a benchmarking and diagnostic study rather than as evidence for a universally superior optimizer. The results support three main findings. First, proxy alignment is a precondition for beneficial search: on the misaligned real datasets Heart Disease and Credit Approval, all search methods underperform Default-KP, with pairwise comparisons against DMKPO-Log yielding Cliff's $\delta=-1.00$ versus Default-KP in both cases. Second, when search is justified, log-space parameterization is the key methodological requirement: on H2-Easy, DMKPO-Lin and Optuna-TPE collapse to ARI $=0.108 \pm 0.001$, whereas the strongest log-space methods remain around $0.735$--$0.737$, indicating that parameterization matters more than optimizer sophistication. Third, adaptive refinement has budget-dependent value rather than universal superiority: DMKPO-Log is indistinguishable from Grid-Log at $B=15$ on the synthetic benchmark, but at $B=7$ it improves over Grid-Log on H2-Medium ($p<0.05$, Cliff's $\delta=0.139$).
+
+A cautious practical workflow follows directly from these results. When a small labeled validation subset is available, proxy alignment should be checked before allocating the full search budget. If the proxy is misaligned, the default heuristic is a safer baseline; if it is aligned, search should proceed in log-space. Within that aligned regime, a static log-grid is often sufficient at moderate budgets, while DMKPO-Log is more attractive when only a small number of $K$-Prototypes evaluations is available. The strongest evidence still comes from the controlled synthetic benchmark, and the current diagnostic is intended for validation-in-the-loop or audit settings rather than fully label-free deployment. Extending these findings to broader real-data settings and to label-free diagnostics remains an important direction for future work.
+
+\section*{Data and Code Availability}
+
+All source code, experiment configurations, and reproduction scripts for this study should be made publicly available in the final submission through a versioned GitHub repository and an archived Zenodo release with DOI. The released materials should include: (i) scripts for generating the seven synthetic datasets; (ii) preprocessing pipelines and access instructions for the real datasets used in the proxy-alignment scans and primary benchmark; (iii) implementations of Default-KP, Grid-Log, Random, Optuna-TPE, DMKPO-Lin, and DMKPO-Log; and (iv) commands for reproducing the reported tables, statistics, and figures. This release structure is consistent with the repository layout described in the reproducibility package and should allow the full workflow to be inspected and re-run without requesting access from the authors. Once the repository URL and DOI are finalized, this section should be updated with the explicit links used for peer review and publication.
+
+\section*{Funding}
+
+This research received no external funding.
+
+\section*{Competing Interests}
+
+The authors declare that they have no competing interests.
+
+\section*{Author Contributions}
+
+Yuxin Zhang conceived the study, designed the experiments, implemented the methods, analyzed the results, and drafted the manuscript. Man Yuan contributed to conceptual discussion, result interpretation, and manuscript revision. Both authors approved the final manuscript.
+
+\bibliographystyle{plainnat}
+\bibliography{paper}
+
+\end{document}
+

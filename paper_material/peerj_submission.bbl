@@ -1,0 +1,45 @@
+\begin{thebibliography}{8}
+
+\bibitem[Bergstra and Bengio(2012)]{bergstra2012}
+Bergstra, J.; Bengio, Y.
+\newblock Random search for hyper-parameter optimization.
+\newblock {\em Journal of Machine Learning Research} {\bf 2012}, {\em 13}, 281--305.
+
+\bibitem[Bischl et~al.(2023)]{bischl2023hpo}
+Bischl, B.; Binder, M.; Lang, M.; Pielok, T.; Richter, J.; Coors, S.; Thomas, J.; Ullmann, T.; Becker, M.; Boulesteix, A.L.; Deng, D.; Lindauer, M.
+\newblock Hyperparameter optimization: Foundations, algorithms, best practices, and open challenges.
+\newblock {\em WIREs Data Mining and Knowledge Discovery} {\bf 2023}, {\em 13}, e1484.
+
+\bibitem[D{\"o}rfler(1996)]{dorfler1996}
+D{\"o}rfler, W.
+\newblock A convergent adaptive algorithm for {Poisson's} equation.
+\newblock {\em SIAM Journal on Numerical Analysis} {\bf 1996}, {\em 33}, 1106--1124.
+
+\bibitem[Huang(1997)]{huang1997}
+Huang, Z.
+\newblock Clustering large data sets with mixed numeric and categorical values.
+\newblock In {\em Proceedings of the First Pacific-Asia Conference on Knowledge Discovery and Data Mining}; 1997; pp. 21--34.
+
+\bibitem[Huang(1998)]{huang1998}
+Huang, Z.
+\newblock Extensions to the k-means algorithm for clustering large data sets with categorical values.
+\newblock {\em Data Mining and Knowledge Discovery} {\bf 1998}, {\em 2}, 283--304.
+
+\bibitem[Pfeiler and Praetorius(2020)]{pfeiler2020dorfler}
+Pfeiler, C.M.; Praetorius, D.
+\newblock {D{\"o}rfler} marking with minimal cardinality is a linear complexity problem.
+\newblock {\em Mathematics of Computation} {\bf 2020}, {\em 89}, 2735--2752.
+
+\bibitem[Snoek et~al.(2012)]{snoek2012}
+Snoek, J.; Larochelle, H.; Adams, R.P.
+\newblock Practical {Bayesian} optimization of machine learning algorithms.
+\newblock In {\em Advances in Neural Information Processing Systems}; 2012; pp. 2951--2959.
+
+\bibitem[Akiba et~al.(2019)]{akiba2019optuna}
+Akiba, T.; Sano, S.; Yanase, T.; Ohta, T.; Koyama, M.
+\newblock {Optuna}: A Next-Generation Hyperparameter Optimization Framework.
+\newblock In {\em Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining}; 2019; pp. 2623--2631.
+
+\end{thebibliography}
+
+
