@@ -1,0 +1,14 @@
+{
+  "synthetic_common_note": "For all synthetic datasets, zero-based categorical indices refer to columns after the continuous columns. The true_label column is not used for gamma search or model fitting.",
+  "H1-Easy": {"categorical_indices_zero_based": [4, 5], "continuous_columns": ["x_num_1", "x_num_2", "x_num_3", "x_num_4"], "categorical_columns": ["x_cat_1", "x_cat_2"], "label_column": "true_label"},
+  "H1-Medium": {"categorical_indices_zero_based": [4, 5], "continuous_columns": ["x_num_1", "x_num_2", "x_num_3", "x_num_4"], "categorical_columns": ["x_cat_1", "x_cat_2"], "label_column": "true_label"},
+  "H1-Hard": {"categorical_indices_zero_based": [4, 5], "continuous_columns": ["x_num_1", "x_num_2", "x_num_3", "x_num_4"], "categorical_columns": ["x_cat_1", "x_cat_2"], "label_column": "true_label"},
+  "H2-Easy": {"categorical_indices_zero_based": [1, 2, 3], "continuous_columns": ["x_num_1"], "categorical_columns": ["x_cat_1", "x_cat_2", "x_cat_3"], "label_column": "true_label"},
+  "H2-Medium": {"categorical_indices_zero_based": [2, 3, 4], "continuous_columns": ["x_num_1", "x_num_2"], "categorical_columns": ["x_cat_1", "x_cat_2", "x_cat_3"], "label_column": "true_label"},
+  "H2-Hard": {"categorical_indices_zero_based": [2, 3, 4], "continuous_columns": ["x_num_1", "x_num_2"], "categorical_columns": ["x_cat_1", "x_cat_2", "x_cat_3"], "label_column": "true_label"},
+  "Control-Balanced": {"categorical_indices_zero_based": [5, 6, 7, 8, 9], "continuous_columns": ["x_num_1", "x_num_2", "x_num_3", "x_num_4", "x_num_5"], "categorical_columns": ["x_cat_1", "x_cat_2", "x_cat_3", "x_cat_4", "x_cat_5"], "label_column": "true_label"},
+  "Heart Disease": {"categorical_columns": ["sex", "cp", "fbs", "restecg", "exang", "slope", "thal"], "continuous_columns": ["age", "trestbps", "chol", "thalach", "oldpeak", "ca"], "label_column": "num_binarized"},
+  "Credit Approval": {"categorical_columns": "Detected from object/category/bool columns by the included loader", "continuous_columns": "Numeric columns after coercion", "label_column": "class"},
+  "Adult": {"categorical_columns": "Detected from object/category/bool columns by the included loader", "continuous_columns": "Numeric columns after coercion", "label_column": "income_cleaned"},
+  "Bank Marketing": {"categorical_columns": ["job", "marital", "education", "default", "housing", "loan", "contact", "month", "poutcome"], "continuous_columns": ["age", "balance", "day", "duration", "campaign", "pdays", "previous"], "label_column": "y"}
+}
